@@ -1,0 +1,42 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+merchant-api
+main
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+coverage.txt
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+
+# Claude Code
+.claude/
+
+# macOS
+.DS_Store
+
+# Generated OpenAPI code
+internal/api/openapi/server.gen.go
+
+# Backup files
+*.backup
+
+# Environment variables (if any secrets exist)
+.env
+.env.local
