@@ -42,6 +42,18 @@ Each consuming service keeps its own coverage lint and sentinel/property tests
 (under `internal/redact`) that assert its own types are classified correctly;
 the reusable redaction engine lives here.
 
+### `tlv`
+
+Validates the EMV authorized amount (`9F02`) in BER-TLV payloads and provides
+numeric BCD conversion:
+
+```go
+err := tlv.ValidateAmount(payload, "100")
+```
+
+Validation errors can be classified with `errors.Is` using the exported
+sentinels such as `tlv.ErrParsingTLV` and `tlv.ErrAmountMismatch`.
+
 ## Local development
 
 Until this module is tagged and published, consuming services reference it with
