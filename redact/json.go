@@ -9,8 +9,8 @@ import (
 // where struct tags cannot reach. First match wins; matching is deliberately
 // substring-based so over-redaction is the failure mode, never leakage.
 var keyRules = []struct {
-	re  *regexp.Regexp
-	act action
+	regex *regexp.Regexp
+	act   action
 }{
 	{regexp.MustCompile(`(?i)(pin|token|secret|password|passphrase|credential|csr|payload|privatekey|apikey|cvv|cvc|pan$|^pan|track)`), actHide},
 	{regexp.MustCompile(`(?i)(taxid|vat|registration|email|phone|address|city|postal|wallet|name|serial|iban|account)`), actMask},
@@ -18,7 +18,7 @@ var keyRules = []struct {
 
 func keyAction(key string) (action, bool) {
 	for _, rule := range keyRules {
-		if rule.re.MatchString(key) {
+		if rule.regex.MatchString(key) {
 			return rule.act, true
 		}
 	}
@@ -47,11 +47,11 @@ func (r *Redactor) JSON(raw []byte) []byte {
 // redactParsed walks a json.Unmarshal-shaped value (map[string]any, []any,
 // scalars) applying key rules. Under ProfileAudit unmatched keys with scalar
 // values are hidden rather than passed through.
-func (r *Redactor) redactParsed(v any, depth int) any {
+func (r *Redactor) redactParsed(value any, depth int) any {
 	if depth > maxDepth {
 		return Redacted
 	}
-	switch val := v.(type) {
+	switch val := value.(type) {
 	case map[string]any:
 		return r.redactParsedMap(val, depth)
 	case []any:
@@ -64,7 +64,7 @@ func (r *Redactor) redactParsed(v any, depth int) any {
 		if r.profile == ProfileAudit {
 			return Redacted
 		}
-		return v
+		return value
 	}
 }
 
@@ -88,12 +88,12 @@ func (r *Redactor) redactParsedMapItem(key string, item any, depth int) any {
 	return r.redactParsed(item, depth+1)
 }
 
-func applyToParsed(act action, v any) any {
+func applyToParsed(act action, value any) any {
 	if act == actHide {
 		return Redacted
 	}
 	// actMask
-	if s, ok := v.(string); ok {
+	if s, ok := value.(string); ok {
 		return MaskString(s)
 	}
 	return "****"
