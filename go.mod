@@ -3,6 +3,7 @@ module github.com/interledger/cards-utils
 go 1.25
 
 require (
+	github.com/moov-io/bertlv v0.1.0
 	github.com/rs/zerolog v1.34.0
 	github.com/stretchr/testify v1.11.1
 )
