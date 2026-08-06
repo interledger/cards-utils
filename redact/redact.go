@@ -159,23 +159,37 @@ func buildPlan(t reflect.Type, profile Profile) *typePlan {
 		if !f.IsExported() {
 			continue
 		}
-		name := f.Name
-		if jsonTag, ok := f.Tag.Lookup("json"); ok {
-			jsonName, _, _ := strings.Cut(jsonTag, ",")
-			if jsonName == "-" {
-				continue // not part of the type's JSON shape; don't log it
-			}
-			if jsonName != "" {
-				name = jsonName
-			}
+		name, included := jsonFieldName(f)
+		if !included {
+			continue
 		}
 		act := actClear
 		if class, ok := f.Tag.Lookup("sensitive"); ok {
 			act = profile.actionFor(class)
 		}
-		p.fields = append(p.fields, fieldPlan{index: f.Index, name: name, act: act})
+		p.fields = append(p.fields, fieldPlan{
+			index: f.Index,
+			name:  name,
+			act:   act,
+		})
 	}
 	return p
+}
+
+func jsonFieldName(f reflect.StructField) (string, bool) {
+	jsonTag, ok := f.Tag.Lookup("json")
+	if !ok {
+		return f.Name, true
+	}
+
+	jsonName, _, _ := strings.Cut(jsonTag, ",")
+	if jsonName == "-" {
+		return "", false
+	}
+	if jsonName == "" {
+		return f.Name, true
+	}
+	return jsonName, true
 }
 
 func (r *Redactor) walk(v reflect.Value, act action, depth int) any {
@@ -186,11 +200,17 @@ func (r *Redactor) walk(v reflect.Value, act action, depth int) any {
 		return nil
 	}
 
-	switch v.Kind() {
-	case reflect.Pointer, reflect.Interface:
-		if v.IsNil() {
-			return nil
+	if (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) && v.IsNil() {
+		return nil
+	}
+
+	if act == actClear && v.CanInterface() {
+		if red, ok := v.Interface().(Redactable); ok {
+			return red.RedactedFields()
 		}
+	}
+
+	if v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		return r.walk(v.Elem(), act, depth+1)
 	}
 
@@ -209,9 +229,6 @@ func (r *Redactor) walk(v reflect.Value, act action, depth int) any {
 		t := v.Type()
 		if t == timeType {
 			return v.Interface()
-		}
-		if red, ok := v.Interface().(Redactable); ok {
-			return red.RedactedFields()
 		}
 		plan := r.planFor(t)
 		out := make(map[string]any, len(plan.fields))
@@ -281,8 +298,9 @@ func MaskString(s string) string {
 	if s == "" {
 		return ""
 	}
-	if len(s) > 8 {
-		return s[:3] + "****" + s[len(s)-3:]
+	runes := []rune(s)
+	if len(runes) > 8 {
+		return string(runes[:3]) + "****" + string(runes[len(runes)-3:])
 	}
 	return "****"
 }

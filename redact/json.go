@@ -53,24 +53,7 @@ func (r *Redactor) redactParsed(v any, depth int) any {
 	}
 	switch val := v.(type) {
 	case map[string]any:
-		out := make(map[string]any, len(val))
-		for k, item := range val {
-			act, matched := keyAction(k)
-			switch {
-			case matched:
-				out[k] = applyToParsed(act, item)
-			case r.profile == ProfileAudit:
-				switch item.(type) {
-				case map[string]any, []any:
-					out[k] = r.redactParsed(item, depth+1)
-				default:
-					out[k] = Redacted
-				}
-			default:
-				out[k] = r.redactParsed(item, depth+1)
-			}
-		}
-		return out
+		return r.redactParsedMap(val, depth)
 	case []any:
 		out := make([]any, len(val))
 		for i, item := range val {
@@ -78,8 +61,31 @@ func (r *Redactor) redactParsed(v any, depth int) any {
 		}
 		return out
 	default:
+		if r.profile == ProfileAudit {
+			return Redacted
+		}
 		return v
 	}
+}
+
+func (r *Redactor) redactParsedMap(val map[string]any, depth int) map[string]any {
+	out := make(map[string]any, len(val))
+	for k, item := range val {
+		out[k] = r.redactParsedMapItem(k, item, depth)
+	}
+	return out
+}
+
+func (r *Redactor) redactParsedMapItem(key string, item any, depth int) any {
+	act, matched := keyAction(key)
+	if matched {
+		if r.profile == ProfileAudit {
+			act = actHide
+		}
+		return applyToParsed(act, item)
+	}
+
+	return r.redactParsed(item, depth+1)
 }
 
 func applyToParsed(act action, v any) any {
