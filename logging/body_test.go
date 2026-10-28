@@ -40,7 +40,7 @@ func serveBodies(t *testing.T, enabled bool, level zerolog.Level, path, body str
 	})
 
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSONCharsetUTF8)
+	req.Header.Set(echo.HeaderContentType, "application/json; charset=utf-8")
 	e.ServeHTTP(httptest.NewRecorder(), req)
 	return logs.String(), seen
 }

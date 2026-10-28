@@ -148,7 +148,7 @@ func isRedactCall(expr ast.Expr) bool {
 	if !ok {
 		return false
 	}
-	var x ast.Expr = call.Fun
+	x := call.Fun
 	for {
 		switch e := x.(type) {
 		case *ast.SelectorExpr:
