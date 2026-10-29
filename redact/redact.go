@@ -131,7 +131,27 @@ func (r *Redactor) Redact(v any) any {
 // cannot hang the logger.
 const maxDepth = 32
 
-var timeType = reflect.TypeOf(time.Time{})
+var (
+	timeType       = reflect.TypeOf(time.Time{})
+	redactableType = reflect.TypeFor[Redactable]()
+	redactables    sync.Map // reflect.Type -> bool
+)
+
+// implementsRedactable reports whether t implements Redactable, without
+// boxing a value to find out. A type with no methods, such as a string, an
+// int or []byte, cannot; the answer for others is cached per type. An
+// interface value is checked through its dynamic value instead.
+func implementsRedactable(t reflect.Type) bool {
+	if t.NumMethod() == 0 {
+		return false
+	}
+	if ok, cached := redactables.Load(t); cached {
+		return ok.(bool)
+	}
+	ok := t.Implements(redactableType)
+	redactables.Store(t, ok)
+	return ok
+}
 
 type fieldPlan struct {
 	index []int
@@ -204,10 +224,8 @@ func (r *Redactor) walk(v reflect.Value, act action, depth int) any {
 		return nil
 	}
 
-	if act == actClear && v.CanInterface() {
-		if red, ok := v.Interface().(Redactable); ok {
-			return red.RedactedFields()
-		}
+	if act == actClear && v.Kind() != reflect.Interface && v.CanInterface() && implementsRedactable(v.Type()) {
+		return v.Interface().(Redactable).RedactedFields()
 	}
 
 	if v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
