@@ -236,6 +236,56 @@ type customType struct{ secret string }
 
 func (customType) RedactedFields() map[string]any { return map[string]any{"custom": "form"} }
 
+type pointerCustomType struct{ secret string }
+
+func (*pointerCustomType) RedactedFields() map[string]any { return map[string]any{"pointer": "form"} }
+
+// The escape hatch applies wherever the value sits: behind a pointer, in an
+// interface field, or in a slice, and for a pointer-receiver implementation.
+func TestRedactableEscapeHatchThroughIndirection(t *testing.T) {
+	type holder struct {
+		Value     customType
+		Ptr       *customType
+		Any       any
+		AnyPtr    any
+		PtrRecv   *pointerCustomType
+		AnyRecv   any
+		Slice     []customType
+		NotCustom any
+	}
+	out := redact.Redact(holder{
+		Value:     customType{secret: "raw"},
+		Ptr:       &customType{secret: "raw"},
+		Any:       customType{secret: "raw"},
+		AnyPtr:    &customType{secret: "raw"},
+		PtrRecv:   &pointerCustomType{secret: "raw"},
+		AnyRecv:   &pointerCustomType{secret: "raw"},
+		Slice:     []customType{{secret: "raw"}},
+		NotCustom: "plain",
+	}).(map[string]any)
+
+	custom := map[string]any{"custom": "form"}
+	pointer := map[string]any{"pointer": "form"}
+	assert.Equal(t, custom, out["Value"])
+	assert.Equal(t, custom, out["Ptr"])
+	assert.Equal(t, custom, out["Any"])
+	assert.Equal(t, custom, out["AnyPtr"])
+	assert.Equal(t, pointer, out["PtrRecv"])
+	assert.Equal(t, pointer, out["AnyRecv"])
+	assert.Equal(t, []any{custom}, out["Slice"])
+	assert.Equal(t, "plain", out["NotCustom"])
+}
+
+// The escape hatch is not consulted for a field whose tag already redacts
+// it.
+func TestRedactableIgnoredOnTaggedField(t *testing.T) {
+	type holder struct {
+		Hidden customType `sensitive:"credential"`
+	}
+	out := redact.Redact(holder{Hidden: customType{secret: "raw"}}).(map[string]any)
+	assert.Equal(t, redact.Redacted, out["Hidden"])
+}
+
 func keys(m map[string]any) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

@@ -1,13 +1,20 @@
 package redact
 
 import (
+	"bytes"
 	"encoding/json"
 	"regexp"
+	"unicode/utf8"
 )
 
 // keyRules classify free-form keys - dynamic-map entries and raw JSON bodies -
 // where struct tags cannot reach. First match wins; matching is deliberately
 // substring-based so over-redaction is the failure mode, never leakage.
+//
+// keyAction matches ASCII keys, the common case, against keyWords instead;
+// the regexes stay the reference and handle other keys, whose Unicode case
+// folding strings.ToLower does not reproduce. Keep the two in step:
+// TestKeyWordsMatchKeyRules checks they agree.
 var keyRules = []struct {
 	regex *regexp.Regexp
 	act   action
@@ -16,7 +23,67 @@ var keyRules = []struct {
 	{regexp.MustCompile(`(?i)(taxid|vat|registration|email|phone|address|city|postal|wallet|name|serial|iban|account)`), actMask},
 }
 
+// keyWords is keyRules as plain words, matched against the lowercased key.
+var keyWords = []struct {
+	contains       [][]byte
+	prefix, suffix [][]byte
+	act            action
+}{
+	{
+		contains: words("pin", "token", "secret", "password", "passphrase", "credential", "csr", "payload", "privatekey", "apikey", "cvv", "cvc", "track"),
+		prefix:   words("pan"),
+		suffix:   words("pan"),
+		act:      actHide,
+	},
+	{
+		contains: words("taxid", "vat", "registration", "email", "phone", "address", "city", "postal", "wallet", "name", "serial", "iban", "account"),
+		act:      actMask,
+	},
+}
+
+func words(ws ...string) [][]byte {
+	out := make([][]byte, len(ws))
+	for i, w := range ws {
+		out[i] = []byte(w)
+	}
+	return out
+}
+
 func keyAction(key string) (action, bool) {
+	var buf [64]byte
+	lower := buf[:0]
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		if c >= utf8.RuneSelf {
+			return regexKeyAction(key)
+		}
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		lower = append(lower, c)
+	}
+
+	for _, rule := range keyWords {
+		for _, w := range rule.contains {
+			if bytes.Contains(lower, w) {
+				return rule.act, true
+			}
+		}
+		for _, w := range rule.prefix {
+			if bytes.HasPrefix(lower, w) {
+				return rule.act, true
+			}
+		}
+		for _, w := range rule.suffix {
+			if bytes.HasSuffix(lower, w) {
+				return rule.act, true
+			}
+		}
+	}
+	return actClear, false
+}
+
+func regexKeyAction(key string) (action, bool) {
 	for _, rule := range keyRules {
 		if rule.regex.MatchString(key) {
 			return rule.act, true
