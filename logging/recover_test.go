@@ -15,7 +15,7 @@ import (
 	"github.com/interledger/cards-utils/logging"
 )
 
-func TestLogPanic_LogsOnceAtErrorAndReturnsTheError(t *testing.T) {
+func TestLogPanicLogsOnceAtErrorAndReturnsTheError(t *testing.T) {
 	var logs bytes.Buffer
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/v1/things?pan=4111111111111111", strings.NewReader(`{"pin":"1234"}`))

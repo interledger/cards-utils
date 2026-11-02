@@ -24,7 +24,7 @@ type auditedThing struct {
 	Attributes map[string]any `sensitive:"dynamic"`
 }
 
-func TestAudit_CarriesRequestFieldsAndNoClassifiedValues(t *testing.T) {
+func TestAuditCarriesRequestFieldsAndNoClassifiedValues(t *testing.T) {
 	var logs bytes.Buffer
 	base := zerolog.New(&logs).With().Str("request_id", "req-1").Logger()
 	ctx := logging.WithLogger(context.Background(), base)

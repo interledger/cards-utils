@@ -8,7 +8,7 @@ import (
 )
 
 // The guard must catch the leaks it exists for, and only those.
-func TestCheckLogCalls_CatchesUnredactedValues(t *testing.T) {
+func TestCheckLogCallsCatchesUnredactedValues(t *testing.T) {
 	problems, err := checkLogCalls("testdata/logcalls", nil)
 	require.NoError(t, err)
 
@@ -25,7 +25,7 @@ func TestCheckLogCalls_CatchesUnredactedValues(t *testing.T) {
 	require.NotContains(t, got, "leak_test.go")
 }
 
-func TestCheckLogCalls_Allowlist(t *testing.T) {
+func TestCheckLogCallsAllowlist(t *testing.T) {
 	problems, err := checkLogCalls("testdata/logcalls", map[string]string{
 		`leak.go: Interface("card", c)`:                 "test",
 		`leak.go: Any("card", c)`:                       "test",
@@ -37,7 +37,7 @@ func TestCheckLogCalls_Allowlist(t *testing.T) {
 	require.Equal(t, []string{`logging allowlist entry "gone.go: Interface(\"x\", x)" matches no call — remove it`}, problems)
 }
 
-func TestCheckLogCalls_FailsOnAnEmptyRoot(t *testing.T) {
+func TestCheckLogCallsFailsOnAnEmptyRoot(t *testing.T) {
 	_, err := checkLogCalls(t.TempDir(), nil)
 	require.Error(t, err)
 }

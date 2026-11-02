@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -13,8 +14,11 @@ import (
 const RequestStartKey = "request_start"
 
 // ZerologMiddleware attaches a request-scoped logger to the request context
-// and logs each successful request once, at info. A failed request is logged
-// by the HTTP error handler instead, so each request produces one line.
+// and logs each request whose handler returns no error once, as
+// request_completed, at a level that follows the response status: error for
+// 5xx, warn for 4xx, info otherwise. A handler that returns an error is
+// logged by the HTTP error handler instead, so each request produces one
+// line.
 func ZerologMiddleware(base zerolog.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -43,8 +47,9 @@ func ZerologMiddleware(base zerolog.Logger) echo.MiddlewareFunc {
 
 			err := next(c)
 			if err == nil {
-				log.Info().
-					Int("status", c.Response().Status).
+				status := c.Response().Status
+				log.WithLevel(levelForStatus(status)).
+					Int("status", status).
 					Int64("bytes", c.Response().Size).
 					Int64("latency_ms", time.Since(start).Milliseconds()).
 					Msg("request_completed")
@@ -52,6 +57,19 @@ func ZerologMiddleware(base zerolog.Logger) echo.MiddlewareFunc {
 
 			return err
 		}
+	}
+}
+
+// levelForStatus maps a response status to the level of its
+// request_completed line.
+func levelForStatus(status int) zerolog.Level {
+	switch {
+	case status >= http.StatusInternalServerError:
+		return zerolog.ErrorLevel
+	case status >= http.StatusBadRequest:
+		return zerolog.WarnLevel
+	default:
+		return zerolog.InfoLevel
 	}
 }
 

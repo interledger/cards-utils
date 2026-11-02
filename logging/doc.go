@@ -32,7 +32,9 @@
 //		LogErrorFunc:        logging.LogPanic,
 //	}))
 //
-// ZerologMiddleware logs each successful request once, as request_completed.
+// ZerologMiddleware logs each request whose handler returns no error once, as
+// request_completed, at error for a 5xx status, warn for a 4xx and info
+// otherwise.
 //
 // # Failures are logged once
 //

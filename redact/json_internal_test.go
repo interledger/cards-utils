@@ -15,6 +15,9 @@ var keyCorpus = []string{
 	"taxId", "tax_id", "vat", "vatNumber", "registrationNumber", "email", "phone", "address",
 	"city", "postalCode", "walletAddress", "name", "legalName", "serialNumber", "iban", "accountId",
 	"descriptionText", "x-request-id",
+	"key", "keyCode", "issuer_signing_key", "ksn", "pwk", "pinWorkingKey", "bdk", "sredBdk", "ipek", "zmk",
+	"sred", "cipherData", "tlvData", "emvData", "iccData", "cryptogram", "arqc", "arpc",
+	"expiryDate", "expiresAt", "cardholderName", "monkey",
 	// Non-ASCII: the Kelvin sign folds to k and the long s to s under (?i).
 	"ﬁle", "toKen", "ſecret", "naïve", "名前", "émail",
 	// Longer than keyAction's stack buffer.

@@ -19,7 +19,7 @@ var keyRules = []struct {
 	regex *regexp.Regexp
 	act   action
 }{
-	{regexp.MustCompile(`(?i)(pin|token|secret|password|passphrase|credential|csr|payload|privatekey|apikey|cvv|cvc|pan$|^pan|track)`), actHide},
+	{regexp.MustCompile(`(?i)(pin|token|secret|password|passphrase|credential|csr|payload|privatekey|apikey|cvv|cvc|pan$|^pan|track|key|ksn|pwk|bdk|ipek|zmk|sred|cipher|tlv|emv|icc|cryptogram|arqc|arpc|expir|cardholder)`), actHide},
 	{regexp.MustCompile(`(?i)(taxid|vat|registration|email|phone|address|city|postal|wallet|name|serial|iban|account)`), actMask},
 }
 
@@ -30,10 +30,11 @@ var keyWords = []struct {
 	act            action
 }{
 	{
-		contains: words("pin", "token", "secret", "password", "passphrase", "credential", "csr", "payload", "privatekey", "apikey", "cvv", "cvc", "track"),
-		prefix:   words("pan"),
-		suffix:   words("pan"),
-		act:      actHide,
+		contains: words("pin", "token", "secret", "password", "passphrase", "credential", "csr", "payload", "privatekey", "apikey", "cvv", "cvc", "track",
+			"key", "ksn", "pwk", "bdk", "ipek", "zmk", "sred", "cipher", "tlv", "emv", "icc", "cryptogram", "arqc", "arpc", "expir", "cardholder"),
+		prefix: words("pan"),
+		suffix: words("pan"),
+		act:    actHide,
 	},
 	{
 		contains: words("taxid", "vat", "registration", "email", "phone", "address", "city", "postal", "wallet", "name", "serial", "iban", "account"),

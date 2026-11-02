@@ -35,6 +35,7 @@ func FromContext(ctx context.Context) zerolog.Logger {
 		return log
 	}
 
-	//if this happens, smth is really wrong
+	// No logger in ctx: the request did not pass through ZerologMiddleware,
+	// or the service imports a copy of this package (see the package doc).
 	return zerolog.Nop()
 }

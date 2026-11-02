@@ -32,7 +32,7 @@ func serve(t *testing.T, handler echo.HandlerFunc) (string, int64) {
 	return logs.String(), latency
 }
 
-func TestZerologMiddleware_LogsACompletedRequestOnceAtInfo(t *testing.T) {
+func TestZerologMiddlewareLogsACompletedRequestOnceAtInfo(t *testing.T) {
 	out, _ := serve(t, func(c echo.Context) error {
 		log := logging.FromContext(c.Request().Context())
 		log.Debug().Msg("inside_handler")
@@ -50,7 +50,32 @@ func TestZerologMiddleware_LogsACompletedRequestOnceAtInfo(t *testing.T) {
 	require.Contains(t, lines[1], `"message":"request_completed"`)
 }
 
-func TestZerologMiddleware_LeavesFailedRequestsToTheErrorHandler(t *testing.T) {
+// A handler that answers with an error status itself and returns nil is
+// logged at the level its status calls for.
+func TestZerologMiddlewareLevelFollowsTheStatus(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		level  string
+	}{
+		{http.StatusOK, "info"},
+		{http.StatusFound, "info"},
+		{http.StatusNotFound, "warn"},
+		{http.StatusUnprocessableEntity, "warn"},
+		{http.StatusInternalServerError, "error"},
+		{http.StatusServiceUnavailable, "error"},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			out, _ := serve(t, func(c echo.Context) error {
+				return c.NoContent(tc.status)
+			})
+
+			require.Contains(t, out, `"level":"`+tc.level+`"`)
+			require.Contains(t, out, `"message":"request_completed"`)
+		})
+	}
+}
+
+func TestZerologMiddlewareLeavesFailedRequestsToTheErrorHandler(t *testing.T) {
 	out, latency := serve(t, func(echo.Context) error {
 		return errors.New("boom")
 	})
@@ -59,7 +84,7 @@ func TestZerologMiddleware_LeavesFailedRequestsToTheErrorHandler(t *testing.T) {
 	require.GreaterOrEqual(t, latency, int64(0))
 }
 
-func TestLatencyMS_WithoutStartTime(t *testing.T) {
+func TestLatencyMSWithoutStartTime(t *testing.T) {
 	c := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/", nil), httptest.NewRecorder())
 
 	require.Equal(t, int64(-1), logging.LatencyMS(c))

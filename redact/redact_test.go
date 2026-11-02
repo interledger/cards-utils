@@ -148,6 +148,34 @@ func TestJSONRedactsRawBodies(t *testing.T) {
 		"uninspectable bodies are dropped wholesale")
 }
 
+// Card authorization bodies: the TLV data, wrapped PWK, SRED ciphertext and
+// PIN block are hidden; the identifiers stay readable.
+func TestJSONRedactsCardAuthorizationBodies(t *testing.T) {
+	raw := []byte(`{
+		"id": "evt-1",
+		"data": {"cardAuthorization": {
+			"requestId": "r-1",
+			"tlvData": "9F2608AABBCCDDEEFF0011",
+			"pinBlock": "041234FFFFFFFFFF",
+			"pwk": {"key": "D0112P0AE00E0000B82679114F470F54", "kvc": "ABC123", "iv": "00"}
+		}},
+		"sred": {"cipherData": "U1JFRENJUEhFUg==", "iv": "AA==", "ksn": "FFFF9876543210E00001"},
+		"payment": {"cipherData": "U1JFRENJUEhFUg==", "iv": "AA=="}
+	}`)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(redact.JSON(raw), &parsed))
+
+	auth := parsed["data"].(map[string]any)["cardAuthorization"].(map[string]any)
+	assert.Equal(t, "r-1", auth["requestId"])
+	assert.Equal(t, redact.Redacted, auth["tlvData"])
+	assert.Equal(t, redact.Redacted, auth["pinBlock"])
+	assert.Equal(t, redact.Redacted, auth["pwk"])
+	assert.Equal(t, redact.Redacted, parsed["sred"], "a matched key hides its whole object")
+	assert.Equal(t, redact.Redacted, parsed["payment"].(map[string]any)["cipherData"])
+	assert.Equal(t, "evt-1", parsed["id"])
+}
+
 func TestZerologObjectGolden(t *testing.T) {
 	var buf bytes.Buffer
 	logger := zerolog.New(&buf)

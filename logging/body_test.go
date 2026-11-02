@@ -62,7 +62,7 @@ func bodiesEvent(t *testing.T, logs string) map[string]any {
 	return nil
 }
 
-func TestBodyMiddleware_LogsRedactedBodies(t *testing.T) {
+func TestBodyMiddlewareLogsRedactedBodies(t *testing.T) {
 	logs, seen := serveBodies(t, true, zerolog.DebugLevel, "/v1/things", sensitiveRequest, respondSensitive)
 
 	require.Equal(t, sensitiveRequest, seen, "the handler must still read the whole body")
@@ -85,7 +85,7 @@ func TestBodyMiddleware_LogsRedactedBodies(t *testing.T) {
 	require.Equal(t, "ACTIVE", resBody["status"])
 }
 
-func TestBodyMiddleware_LogsTheErrorResponse(t *testing.T) {
+func TestBodyMiddlewareLogsTheErrorResponse(t *testing.T) {
 	var logs bytes.Buffer
 	e := echo.New()
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
@@ -110,7 +110,7 @@ func TestBodyMiddleware_LogsTheErrorResponse(t *testing.T) {
 	require.NotContains(t, logs.String(), "1234")
 }
 
-func TestBodyMiddleware_IsANoOpWhenDisabled(t *testing.T) {
+func TestBodyMiddlewareIsANoOpWhenDisabled(t *testing.T) {
 	logs, seen := serveBodies(t, false, zerolog.DebugLevel, "/v1/things", sensitiveRequest, respondSensitive)
 
 	require.Equal(t, sensitiveRequest, seen)
@@ -118,20 +118,20 @@ func TestBodyMiddleware_IsANoOpWhenDisabled(t *testing.T) {
 	require.NotContains(t, logs, "request_body")
 }
 
-func TestBodyMiddleware_IsANoOpAboveDebug(t *testing.T) {
+func TestBodyMiddlewareIsANoOpAboveDebug(t *testing.T) {
 	logs, _ := serveBodies(t, true, zerolog.InfoLevel, "/v1/things", sensitiveRequest, respondSensitive)
 
 	require.NotContains(t, logs, "http_bodies")
 }
 
-func TestBodyMiddleware_SkipsHealthAndMetrics(t *testing.T) {
+func TestBodyMiddlewareSkipsHealthAndMetrics(t *testing.T) {
 	for _, path := range []string{"/health", "/metrics"} {
 		logs, _ := serveBodies(t, true, zerolog.DebugLevel, path, sensitiveRequest, respondSensitive)
 		require.NotContains(t, logs, "http_bodies", path)
 	}
 }
 
-func TestBodyMiddleware_OmitsABodyOverTheCap(t *testing.T) {
+func TestBodyMiddlewareOmitsABodyOverTheCap(t *testing.T) {
 	big := `{"note":"` + strings.Repeat("a", logging.MaxLoggedBodyBytes) + `","pin":"1234"}`
 
 	logs, seen := serveBodies(t, true, zerolog.DebugLevel, "/v1/things", big, respondSensitive)
@@ -141,7 +141,7 @@ func TestBodyMiddleware_OmitsABodyOverTheCap(t *testing.T) {
 	require.Contains(t, bodiesEvent(t, logs)["request_body"], "OMITTED")
 }
 
-func TestBodyMiddleware_IgnoresNonJSON(t *testing.T) {
+func TestBodyMiddlewareIgnoresNonJSON(t *testing.T) {
 	var logs bytes.Buffer
 	e := echo.New()
 	e.Use(logging.ZerologMiddleware(zerolog.New(&logs).Level(zerolog.DebugLevel)))
