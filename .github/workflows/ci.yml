@@ -22,6 +22,18 @@ jobs:
       - run: go test -race -cover ./...
       - run: go vet ./...
 
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - run: go test ./tlv -run='^$' -fuzz='^FuzzDecode$' -fuzztime=60s
+      - run: go test ./tlv -run='^$' -fuzz='^FuzzValidateAmount$' -fuzztime=30s
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
