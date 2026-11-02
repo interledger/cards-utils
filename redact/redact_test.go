@@ -148,6 +148,34 @@ func TestJSONRedactsRawBodies(t *testing.T) {
 		"uninspectable bodies are dropped wholesale")
 }
 
+// Card authorization bodies: the TLV data, wrapped PWK, SRED ciphertext and
+// PIN block are hidden; the identifiers stay readable.
+func TestJSONRedactsCardAuthorizationBodies(t *testing.T) {
+	raw := []byte(`{
+		"id": "evt-1",
+		"data": {"cardAuthorization": {
+			"requestId": "r-1",
+			"tlvData": "9F2608AABBCCDDEEFF0011",
+			"pinBlock": "041234FFFFFFFFFF",
+			"pwk": {"key": "D0112P0AE00E0000B82679114F470F54", "kvc": "ABC123", "iv": "00"}
+		}},
+		"sred": {"cipherData": "U1JFRENJUEhFUg==", "iv": "AA==", "ksn": "FFFF9876543210E00001"},
+		"payment": {"cipherData": "U1JFRENJUEhFUg==", "iv": "AA=="}
+	}`)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(redact.JSON(raw), &parsed))
+
+	auth := parsed["data"].(map[string]any)["cardAuthorization"].(map[string]any)
+	assert.Equal(t, "r-1", auth["requestId"])
+	assert.Equal(t, redact.Redacted, auth["tlvData"])
+	assert.Equal(t, redact.Redacted, auth["pinBlock"])
+	assert.Equal(t, redact.Redacted, auth["pwk"])
+	assert.Equal(t, redact.Redacted, parsed["sred"], "a matched key hides its whole object")
+	assert.Equal(t, redact.Redacted, parsed["payment"].(map[string]any)["cipherData"])
+	assert.Equal(t, "evt-1", parsed["id"])
+}
+
 func TestZerologObjectGolden(t *testing.T) {
 	var buf bytes.Buffer
 	logger := zerolog.New(&buf)
@@ -235,6 +263,56 @@ func TestRedactableEscapeHatch(t *testing.T) {
 type customType struct{ secret string }
 
 func (customType) RedactedFields() map[string]any { return map[string]any{"custom": "form"} }
+
+type pointerCustomType struct{ secret string }
+
+func (*pointerCustomType) RedactedFields() map[string]any { return map[string]any{"pointer": "form"} }
+
+// The escape hatch applies wherever the value sits: behind a pointer, in an
+// interface field, or in a slice, and for a pointer-receiver implementation.
+func TestRedactableEscapeHatchThroughIndirection(t *testing.T) {
+	type holder struct {
+		Value     customType
+		Ptr       *customType
+		Any       any
+		AnyPtr    any
+		PtrRecv   *pointerCustomType
+		AnyRecv   any
+		Slice     []customType
+		NotCustom any
+	}
+	out := redact.Redact(holder{
+		Value:     customType{secret: "raw"},
+		Ptr:       &customType{secret: "raw"},
+		Any:       customType{secret: "raw"},
+		AnyPtr:    &customType{secret: "raw"},
+		PtrRecv:   &pointerCustomType{secret: "raw"},
+		AnyRecv:   &pointerCustomType{secret: "raw"},
+		Slice:     []customType{{secret: "raw"}},
+		NotCustom: "plain",
+	}).(map[string]any)
+
+	custom := map[string]any{"custom": "form"}
+	pointer := map[string]any{"pointer": "form"}
+	assert.Equal(t, custom, out["Value"])
+	assert.Equal(t, custom, out["Ptr"])
+	assert.Equal(t, custom, out["Any"])
+	assert.Equal(t, custom, out["AnyPtr"])
+	assert.Equal(t, pointer, out["PtrRecv"])
+	assert.Equal(t, pointer, out["AnyRecv"])
+	assert.Equal(t, []any{custom}, out["Slice"])
+	assert.Equal(t, "plain", out["NotCustom"])
+}
+
+// The escape hatch is not consulted for a field whose tag already redacts
+// it.
+func TestRedactableIgnoredOnTaggedField(t *testing.T) {
+	type holder struct {
+		Hidden customType `sensitive:"credential"`
+	}
+	out := redact.Redact(holder{Hidden: customType{secret: "raw"}}).(map[string]any)
+	assert.Equal(t, redact.Redacted, out["Hidden"])
+}
 
 func keys(m map[string]any) []string {
 	out := make([]string, 0, len(m))
