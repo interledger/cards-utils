@@ -90,8 +90,10 @@ encoded, err := tlv.Encode([]tlv.TLV{tlv.NewTag("8A", []byte("00"))})
 ```
 
 `Decode` is safe for untrusted input, such as SRED decrypted under the wrong
-key. It never panics, and every error is a `*tlv.DecodeError` that gives the
-offset and tag (never value bytes) and wraps one of these sentinels:
+key. It never panics, and every error is a `*tlv.DecodeError` that wraps one
+of these sentinels. The error gives only the offset: when a length is wrong,
+what looks like the next tag is part of a value, possibly a PAN, so no input
+bytes are ever put in an error.
 
 | Error | Cause |
 |---|---|
@@ -100,17 +102,35 @@ offset and tag (never value bytes) and wraps one of these sentinels:
 | `ErrUnsupportedLength` | Indefinite length (`80`), reserved `FF`, or more than four length bytes |
 | `ErrTagTooLong` | Tag longer than four bytes |
 | `ErrMaxDepth` | Constructed tags nested deeper than `tlv.MaxDepth` (16) |
+| `ErrInputTooLarge` | Input larger than `tlv.MaxInputSize` (64 KiB) |
 
-Like moov, it skips `00` padding between data objects and accepts
-non-minimal lengths. Two things differ from moov:
+The size limit bounds memory: each decoded TLV costs far more than the two
+bytes it can be encoded in. `Encode` enforces the same limits, and checks that
+raw content given for a constructed tag decodes, so `Decode` accepts
+everything `Encode` writes.
+
+Like moov, it skips `00` padding between data objects (EMV Book 3 Annex B)
+and accepts non-minimal lengths. `FF` is not treated as padding. It differs
+from moov in these ways:
 
 - `FindFirstTag` keeps searching after a constructed tag that doesn't contain
   the tag. moov stopped there, so it missed tags that come after a template.
+  Where moov found a tag, both return the same TLV. The tag is also compared
+  without regard to case.
+- Long-form lengths of five to eight bytes, tags longer than four bytes,
+  input over 64 KiB and nesting deeper than 16 are rejected. moov accepted
+  them; no real EMV payload uses them.
+- `Encode` rejects tag `00`, which moov wrote and which decodes as padding.
 - `Value` slices share memory with the input, but their capacity is capped,
   so appending to one can't overwrite the bytes after it.
+- Errors are `*tlv.DecodeError` with the sentinels above, not moov's
+  untyped errors.
+- `FindTagByPath`, `PrettyPrint`, `Unmarshal` and `CopyTags` are not
+  provided; neither service uses them.
 
-`FuzzDecode` runs in CI and checks that `Decode` never panics and that
-whatever it decodes survives `Encode` and a second `Decode` unchanged.
+`FuzzDecode` and `FuzzEncode` run in CI. They check that `Decode` never
+panics, that whatever it decodes survives `Encode` and a second `Decode`
+unchanged, and that `Decode` reads back whatever `Encode` writes.
 
 ## Local development
 

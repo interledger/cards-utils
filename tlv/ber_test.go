@@ -29,6 +29,7 @@ var sentinels = []error{
 	tlv.ErrUnsupportedLength,
 	tlv.ErrTagTooLong,
 	tlv.ErrMaxDepth,
+	tlv.ErrInputTooLarge,
 }
 
 func TestDecodeTags(t *testing.T) {
@@ -72,9 +73,9 @@ func TestDecodeLengths(t *testing.T) {
 		{name: "one byte long form min", header: "5A 81 80", valLen: 128},
 		{name: "one byte long form max", header: "5A 81 FF", valLen: 255},
 		{name: "two byte long form", header: "5A 82 0100", valLen: 256},
-		{name: "two byte long form max", header: "5A 82 FFFF", valLen: 65535},
-		{name: "three byte long form", header: "5A 83 010000", valLen: 65536},
-		{name: "four byte long form", header: "5A 84 00010001", valLen: 65537},
+		{name: "two byte long form at the input limit", header: "5A 82 FFFC", valLen: tlv.MaxInputSize - 4},
+		{name: "three byte long form", header: "5A 83 000101", valLen: 257},
+		{name: "four byte long form", header: "5A 84 00000102", valLen: 258},
 		{name: "non-minimal long form for short value", header: "5A 81 05", valLen: 5},
 		{name: "non-minimal long form with leading zeroes", header: "5A 84 00000003", valLen: 3},
 		{name: "non-minimal long form zero", header: "5A 82 0000", valLen: 0},
@@ -100,7 +101,6 @@ func TestDecodeErrors(t *testing.T) {
 		data       string
 		wantErr    error
 		wantOffset int
-		wantTag    string
 	}{
 		// Tag
 		{name: "multi-byte tag missing second byte", data: "9F", wantErr: tlv.ErrTruncated},
@@ -111,34 +111,36 @@ func TestDecodeErrors(t *testing.T) {
 		{name: "truncated tag after valid TLV", data: "5A0101 9F", wantErr: tlv.ErrTruncated, wantOffset: 3},
 
 		// Length
-		{name: "length missing", data: "5A", wantErr: tlv.ErrTruncated, wantTag: "5A"},
-		{name: "length missing after multi-byte tag", data: "9F02", wantErr: tlv.ErrTruncated, wantTag: "9F02"},
-		{name: "long-form length bytes missing", data: "5A 81", wantErr: tlv.ErrTruncated, wantTag: "5A"},
-		{name: "long-form length bytes short", data: "9F02 84 FFFF", wantErr: tlv.ErrTruncated, wantTag: "9F02"},
-		{name: "indefinite length", data: "E1 80 5A0101 0000", wantErr: tlv.ErrUnsupportedLength, wantTag: "E1"},
-		{name: "indefinite length on primitive", data: "5A 80", wantErr: tlv.ErrUnsupportedLength, wantTag: "5A"},
-		{name: "five length bytes", data: "5A 85 0000000001 AA", wantErr: tlv.ErrUnsupportedLength, wantTag: "5A"},
-		{name: "eight length bytes", data: "5A 88 0000000000000001 AA", wantErr: tlv.ErrUnsupportedLength, wantTag: "5A"},
-		{name: "reserved length FF", data: "5A FF", wantErr: tlv.ErrUnsupportedLength, wantTag: "5A"},
+		{name: "length missing", data: "5A", wantErr: tlv.ErrTruncated},
+		{name: "length missing after multi-byte tag", data: "9F02", wantErr: tlv.ErrTruncated},
+		{name: "long-form length bytes missing", data: "5A 81", wantErr: tlv.ErrTruncated},
+		{name: "long-form length bytes short", data: "9F02 84 FFFF", wantErr: tlv.ErrTruncated},
+		{name: "indefinite length", data: "E1 80 5A0101 0000", wantErr: tlv.ErrUnsupportedLength},
+		{name: "indefinite length on primitive", data: "5A 80", wantErr: tlv.ErrUnsupportedLength},
+		{name: "five length bytes", data: "5A 85 0000000001 AA", wantErr: tlv.ErrUnsupportedLength},
+		{name: "eight length bytes", data: "5A 88 0000000000000001 AA", wantErr: tlv.ErrUnsupportedLength},
+		{name: "reserved length FF", data: "5A FF", wantErr: tlv.ErrUnsupportedLength},
 
 		// Value
-		{name: "short-form value truncated", data: "5A 05 AABBCC", wantErr: tlv.ErrLengthOutOfRange, wantTag: "5A"},
-		{name: "long-form value truncated", data: "5A 81 80 AA", wantErr: tlv.ErrLengthOutOfRange, wantTag: "5A"},
-		{name: "max four byte length", data: "5A 84 FFFFFFFF AA", wantErr: tlv.ErrLengthOutOfRange, wantTag: "5A"},
-		{name: "length one past end", data: "9F02 07 000000000100", wantErr: tlv.ErrLengthOutOfRange, wantTag: "9F02"},
+		{name: "short-form value truncated", data: "5A 05 AABBCC", wantErr: tlv.ErrLengthOutOfRange},
+		{name: "long-form value truncated", data: "5A 81 80 AA", wantErr: tlv.ErrLengthOutOfRange},
+		{name: "max four byte length", data: "5A 84 FFFFFFFF AA", wantErr: tlv.ErrLengthOutOfRange},
+		{name: "length one past end", data: "9F02 07 000000000100", wantErr: tlv.ErrLengthOutOfRange},
 
 		// Constructed
-		{name: "child overruns parent", data: "E1 03 5A 05 AA", wantErr: tlv.ErrLengthOutOfRange, wantOffset: 2, wantTag: "5A"},
-		{name: "parent overruns input", data: "E1 09 5A01AA", wantErr: tlv.ErrLengthOutOfRange, wantTag: "E1"},
+		{name: "child overruns parent", data: "E1 03 5A 05 AA", wantErr: tlv.ErrLengthOutOfRange, wantOffset: 2},
+		{name: "parent overruns input", data: "E1 09 5A01AA", wantErr: tlv.ErrLengthOutOfRange},
 		{name: "truncated child tag", data: "70 03 5A01AA 77 01 9F", wantErr: tlv.ErrTruncated, wantOffset: 7},
-		{name: "error in second sibling", data: "70 03 5A01AA 77 02 9F02", wantErr: tlv.ErrTruncated, wantOffset: 7, wantTag: "9F02"},
+		{name: "error in second sibling", data: "70 03 5A01AA 77 02 9F02", wantErr: tlv.ErrTruncated, wantOffset: 7},
 		{name: "template length too short", data: "770A9F2701809F360200019F2608AABBCCDDEEFF0011", wantErr: tlv.ErrTruncated, wantOffset: 11},
-		{name: "error deep inside", data: "70 08 77 06 A5 04 5A 05 AA BB", wantErr: tlv.ErrLengthOutOfRange, wantOffset: 6, wantTag: "5A"},
+		{name: "error after padding inside constructed", data: "70 06 0000 5A 05 AABB", wantErr: tlv.ErrLengthOutOfRange, wantOffset: 4},
+		{name: "FF is not padding", data: "5A01AA FFFF", wantErr: tlv.ErrTruncated, wantOffset: 3},
+		{name: "error deep inside", data: "70 08 77 06 A5 04 5A 05 AA BB", wantErr: tlv.ErrLengthOutOfRange, wantOffset: 6},
 
 		// HSM-53
-		{name: "HSM-53 8-byte length overflows int", data: "5A 88 FABADABADABADA BA", wantErr: tlv.ErrUnsupportedLength, wantTag: "5A"},
-		{name: "HSM-53 8-byte length of amount tag", data: "9F02 88 8000000000000000", wantErr: tlv.ErrUnsupportedLength, wantTag: "9F02"},
-		{name: "HSM-53 length bytes missing", data: "9F02 84 FF", wantErr: tlv.ErrTruncated, wantTag: "9F02"},
+		{name: "HSM-53 8-byte length overflows int", data: "5A 88 FABADABADABADA BA", wantErr: tlv.ErrUnsupportedLength},
+		{name: "HSM-53 8-byte length of amount tag", data: "9F02 88 8000000000000000", wantErr: tlv.ErrUnsupportedLength},
+		{name: "HSM-53 length bytes missing", data: "9F02 84 FF", wantErr: tlv.ErrTruncated},
 	}
 
 	for _, tt := range tests {
@@ -154,7 +156,6 @@ func TestDecodeErrors(t *testing.T) {
 			var decodeErr *tlv.DecodeError
 			require.ErrorAs(t, err, &decodeErr)
 			assert.Equal(t, tt.wantOffset, decodeErr.Offset, "offset")
-			assert.Equal(t, tt.wantTag, decodeErr.Tag, "tag")
 		})
 	}
 }
@@ -164,7 +165,7 @@ func TestDecodeEmptyInput(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			got, err := tlv.Decode(data)
 			require.NoError(t, err)
-			assert.Empty(t, got)
+			assert.Nil(t, got)
 		})
 	}
 }
@@ -195,7 +196,7 @@ func TestDecodeSkipsZeroPadding(t *testing.T) {
 	t.Run("only padding", func(t *testing.T) {
 		got, err := tlv.Decode(make([]byte, 32))
 		require.NoError(t, err)
-		assert.Empty(t, got)
+		assert.Nil(t, got)
 	})
 
 	t.Run("00 inside a value is data", func(t *testing.T) {
@@ -252,15 +253,21 @@ func TestDecodeConstructed(t *testing.T) {
 	})
 }
 
-// nested wraps inner in levels constructed E1 tags.
+// nested wraps inner in levels constructed E1 tags. It writes the bytes
+// itself, because Encode refuses to nest deeper than MaxDepth.
 func nested(levels int, inner []byte) []byte {
 	data := inner
 	for range levels {
-		length, err := tlv.Encode([]tlv.TLV{{Tag: "E1", Value: data}})
-		if err != nil {
-			panic(err)
+		var header []byte
+		switch n := len(data); {
+		case n < 0x80:
+			header = []byte{0xE1, byte(n)}
+		case n <= 0xFF:
+			header = []byte{0xE1, 0x81, byte(n)}
+		default:
+			header = []byte{0xE1, 0x82, byte(n >> 8), byte(n)}
 		}
-		data = length
+		data = append(header, data...)
 	}
 
 	return data
@@ -287,9 +294,10 @@ func TestDecodeMaxDepth(t *testing.T) {
 		_, err := tlv.Decode(nested(tlv.MaxDepth+1, leaf))
 		require.ErrorIs(t, err, tlv.ErrMaxDepth)
 
+		// The innermost E1 starts two bytes in per level.
 		var decodeErr *tlv.DecodeError
 		require.ErrorAs(t, err, &decodeErr)
-		assert.Equal(t, "E1", decodeErr.Tag)
+		assert.Equal(t, 2*tlv.MaxDepth, decodeErr.Offset)
 	})
 
 	t.Run("empty constructed one past the limit", func(t *testing.T) {
@@ -297,13 +305,13 @@ func TestDecodeMaxDepth(t *testing.T) {
 		require.ErrorIs(t, err, tlv.ErrMaxDepth)
 	})
 
-	t.Run("very deep input does not exhaust the stack", func(t *testing.T) {
-		// E1 80 would be indefinite, so use short lengths that are wrong
-		// for all but the innermost level; the depth limit trips first.
-		data := bytes.Repeat([]byte{0xE1, 0x7F}, 100_000)
+	t.Run("very deep input stops at the limit", func(t *testing.T) {
+		data := nested(10_000, leaf)
+		require.LessOrEqual(t, len(data), tlv.MaxInputSize)
+
 		var err error
 		require.NotPanics(t, func() { _, err = tlv.Decode(data) })
-		require.Error(t, err)
+		require.ErrorIs(t, err, tlv.ErrMaxDepth)
 	})
 
 	t.Run("wide input at depth 1 is fine", func(t *testing.T) {
@@ -314,21 +322,69 @@ func TestDecodeMaxDepth(t *testing.T) {
 	})
 }
 
+// When a length is wrong, the decoder reads part of a value as the next tag.
+// Nothing it read may reach the error, because the value may be a PAN.
 func TestDecodeErrorDoesNotLeakValues(t *testing.T) {
-	// A PAN followed by a malformed tag.
-	pan := "4111111111111111"
-	data := mustHex(t, "5A08"+pan+"9F02 05 0000")
+	const pan = "4761739001010119"
 
-	_, err := tlv.Decode(data)
-	require.ErrorIs(t, err, tlv.ErrLengthOutOfRange)
-	assert.NotContains(t, err.Error(), pan)
-	assert.NotContains(t, strings.ToUpper(err.Error()), "41111111")
-	assert.Equal(t, "decode BER-TLV tag 9F02 at offset 10: length exceeds remaining data", err.Error())
+	tests := map[string]string{
+		"well framed, then malformed": "5A08" + pan + "9F02 05 0000",
+		"PAN length one short":        "5A07" + pan,
+		"PAN length far too short":    "5A03" + pan,
+		"PAN length one long":         "5A09" + pan,
+		"PAN inside template":         "70 0A 5A07" + pan,
+	}
+
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := tlv.Decode(mustHex(t, data))
+			require.Error(t, err)
+			assertTypedError(t, err)
+
+			// The offset is the only number in the message, so no PAN
+			// digits can appear in it, in hex or as a tag.
+			assert.Regexp(t, `^decode BER-TLV at offset \d+: [a-z ]+$`, err.Error())
+		})
+	}
 }
 
-func TestDecodeErrorMessageWithoutTag(t *testing.T) {
+func TestDecodeErrorMessage(t *testing.T) {
 	_, err := tlv.Decode(mustHex(t, "5A01AA 9F"))
 	require.EqualError(t, err, "decode BER-TLV at offset 3: truncated input")
+}
+
+func TestDecodeInputSize(t *testing.T) {
+	t.Run("at the limit", func(t *testing.T) {
+		data := append(mustHex(t, "5A 82 FFFC"), make([]byte, tlv.MaxInputSize-4)...)
+		require.Len(t, data, tlv.MaxInputSize)
+
+		got, err := tlv.Decode(data)
+		require.NoError(t, err)
+		assert.Len(t, got[0].Value, tlv.MaxInputSize-4)
+	})
+
+	t.Run("one past the limit", func(t *testing.T) {
+		got, err := tlv.Decode(make([]byte, tlv.MaxInputSize+1))
+		require.ErrorIs(t, err, tlv.ErrInputTooLarge)
+		assert.Nil(t, got)
+
+		var decodeErr *tlv.DecodeError
+		require.ErrorAs(t, err, &decodeErr)
+		assert.Equal(t, 0, decodeErr.Offset)
+	})
+}
+
+func TestDecodeEmptyValues(t *testing.T) {
+	got, err := tlv.Decode(mustHex(t, "5A00 7000"))
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+
+	assert.NotNil(t, got[0].Value, "a primitive with no content has an empty, non-nil value")
+	assert.Empty(t, got[0].Value)
+	assert.Nil(t, got[0].TLVs)
+
+	assert.Nil(t, got[1].Value, "a constructed tag keeps its content in TLVs")
+	assert.Nil(t, got[1].TLVs)
 }
 
 func TestDecodeValueCannotOverwriteInput(t *testing.T) {
@@ -393,6 +449,21 @@ func TestFindFirstTag(t *testing.T) {
 	})
 }
 
+func TestFindFirstTagStopsAtMaxDepth(t *testing.T) {
+	cycle := []tlv.TLV{{Tag: "70"}}
+	cycle[0].TLVs = cycle
+
+	var ok bool
+	require.NotPanics(t, func() { _, ok = tlv.FindFirstTag(cycle, "5A") })
+	assert.False(t, ok)
+
+	// A tag at the deepest level Decode allows is still found.
+	decoded, err := tlv.Decode(nested(tlv.MaxDepth, mustHex(t, "5A01AA")))
+	require.NoError(t, err)
+	_, ok = tlv.FindFirstTag(decoded, "5A")
+	assert.True(t, ok)
+}
+
 // moov-io/bertlv returned from the first constructed tag's subtree even when
 // the tag was not in it, so tags after a template were never found.
 func TestFindFirstTagSearchesPastConstructedSiblings(t *testing.T) {
@@ -451,9 +522,7 @@ func TestEncodeLengthIsMinimal(t *testing.T) {
 		{128, "5A8180"},
 		{255, "5A81FF"},
 		{256, "5A820100"},
-		{65535, "5A82FFFF"},
-		{65536, "5A83010000"},
-		{1 << 24, "5A8401000000"},
+		{tlv.MaxInputSize - 4, "5A82FFFC"},
 	}
 
 	for _, tt := range tests {
@@ -486,6 +555,13 @@ func TestEncodeErrors(t *testing.T) {
 		{name: "primitive with children", tlvs: []tlv.TLV{tlv.NewComposite("5A", tlv.NewTag("8A", nil))}, wantErr: tlv.ErrInvalidTag},
 		{name: "invalid nested tag", tlvs: []tlv.TLV{tlv.NewComposite("70", tlv.NewTag("9F", nil))}, wantErr: tlv.ErrInvalidTag},
 		{name: "invalid later tag", tlvs: []tlv.TLV{tlv.NewTag("5A", nil), tlv.NewTag("XX", nil)}, wantErr: tlv.ErrInvalidTag},
+		{name: "raw constructed value truncated", tlvs: []tlv.TLV{tlv.NewTag("70", []byte{0xFF})}, wantErr: tlv.ErrTruncated},
+		{name: "raw constructed value overruns", tlvs: []tlv.TLV{tlv.NewTag("70", mustHex(t, "5A05AA"))}, wantErr: tlv.ErrLengthOutOfRange},
+		{name: "raw constructed value indefinite", tlvs: []tlv.TLV{tlv.NewTag("70", mustHex(t, "E180"))}, wantErr: tlv.ErrUnsupportedLength},
+		{name: "raw constructed value too deep", tlvs: []tlv.TLV{tlv.NewTag("70", nested(tlv.MaxDepth, nil))}, wantErr: tlv.ErrMaxDepth},
+		{name: "raw value inside composite", tlvs: []tlv.TLV{tlv.NewComposite("70", tlv.NewTag("77", []byte{0x9F}))}, wantErr: tlv.ErrTruncated},
+		{name: "output over the limit", tlvs: []tlv.TLV{tlv.NewTag("5A", make([]byte, tlv.MaxInputSize-3))}, wantErr: tlv.ErrInputTooLarge},
+		{name: "outputs over the limit together", tlvs: []tlv.TLV{tlv.NewTag("5A", make([]byte, tlv.MaxInputSize/2)), tlv.NewTag("5A", make([]byte, tlv.MaxInputSize/2))}, wantErr: tlv.ErrInputTooLarge},
 	}
 
 	for _, tt := range tests {
@@ -513,6 +589,11 @@ func TestEncodeMaxDepth(t *testing.T) {
 
 	_, err = tlv.Encode(build(tlv.MaxDepth + 1))
 	require.ErrorIs(t, err, tlv.ErrMaxDepth)
+
+	// Raw content counts towards the depth too: MaxDepth-1 nested levels
+	// inside a raw E1 value make MaxDepth in all.
+	_, err = tlv.Encode([]tlv.TLV{tlv.NewTag("E1", nested(tlv.MaxDepth-1, nil))})
+	require.NoError(t, err)
 }
 
 func TestEncodeDecodeRoundTrip(t *testing.T) {
@@ -539,9 +620,10 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 // data. Each must decode to the listed tags and values.
 func TestDecodeRealPayloads(t *testing.T) {
 	tests := []struct {
-		name string
-		data string
-		want map[string]string // tag -> value hex, found via FindFirstTag
+		name   string
+		data   string
+		want   map[string]string // tag -> value hex, found via FindFirstTag
+		padded bool              // re-encoding drops the padding
 	}{
 		{
 			name: "SRED PAN and cryptogram",
@@ -613,9 +695,10 @@ func TestDecodeRealPayloads(t *testing.T) {
 			},
 		},
 		{
-			name: "amount with padding",
-			data: "00 9F0206000000000100 5F2A020840 00",
-			want: map[string]string{"9F02": "000000000100", "5F2A": "0840"},
+			name:   "amount with padding",
+			data:   "00 9F0206000000000100 5F2A020840 00",
+			want:   map[string]string{"9F02": "000000000100", "5F2A": "0840"},
+			padded: true,
 		},
 	}
 
@@ -634,6 +717,9 @@ func TestDecodeRealPayloads(t *testing.T) {
 
 			reencoded, err := tlv.Encode(decoded)
 			require.NoError(t, err)
+			if !tt.padded {
+				assert.Equal(t, data, reencoded, "canonical input re-encodes to the same bytes")
+			}
 			redecoded, err := tlv.Decode(reencoded)
 			require.NoError(t, err)
 			assert.Equal(t, decoded, redecoded)
@@ -740,5 +826,35 @@ func FuzzDecode(f *testing.F) {
 		again, err := tlv.Decode(encoded)
 		require.NoError(t, err)
 		require.Equal(t, decoded, again)
+	})
+}
+
+// Whatever Encode writes, Decode must read back.
+func FuzzEncode(f *testing.F) {
+	f.Add("5A", mustHex(f, "4111111111111111"))
+	f.Add("9f02", mustHex(f, "000000000100"))
+	f.Add("70", mustHex(f, "5A01AA 77039F2700"))
+	f.Add("70", mustHex(f, "00 5A8101AA 00"))
+	f.Add("E1", mustHex(f, "E180"))
+	f.Add("70", []byte{0xFF})
+	f.Add("DFF101", []byte("https://cardholder.example/pay"))
+
+	f.Fuzz(func(t *testing.T, tag string, value []byte) {
+		encoded, err := tlv.Encode([]tlv.TLV{tlv.NewTag(tag, value)})
+		if err != nil {
+			require.Nil(t, encoded)
+			return
+		}
+
+		decoded, err := tlv.Decode(encoded)
+		require.NoError(t, err, "Decode rejected what Encode wrote: %X", encoded)
+		require.Len(t, decoded, 1)
+		require.True(t, strings.EqualFold(tag, decoded[0].Tag))
+
+		again, err := tlv.Encode(decoded)
+		require.NoError(t, err)
+		redecoded, err := tlv.Decode(again)
+		require.NoError(t, err)
+		require.Equal(t, decoded, redecoded)
 	})
 }

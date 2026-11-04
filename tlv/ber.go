@@ -12,6 +12,12 @@ const (
 	// Encode accept. Real EMV data nests three or four levels at most.
 	MaxDepth = 16
 
+	// MaxInputSize is the largest input Decode accepts and the largest output
+	// Encode produces. Real EMV payloads are well under 1 KiB. The limit
+	// bounds memory: a decoded TLV costs far more than the two bytes it can
+	// be encoded in.
+	MaxInputSize = 64 << 10
+
 	// maxTagBytes and maxLengthBytes bound the tag and the long-form length
 	// field. Four bytes covers every EMV tag (the longest are three bytes) and
 	// lengths up to 4 GiB.
@@ -37,26 +43,25 @@ var (
 	ErrTagTooLong = errors.New("tag too long")
 	// ErrMaxDepth indicates constructed tags nested deeper than MaxDepth.
 	ErrMaxDepth = errors.New("maximum nesting depth exceeded")
+	// ErrInputTooLarge indicates input to Decode, or output from Encode,
+	// larger than MaxInputSize.
+	ErrInputTooLarge = errors.New("input too large")
 	// ErrInvalidTag indicates a tag that Encode cannot write.
 	ErrInvalidTag = errors.New("invalid tag")
 )
 
-// DecodeError reports where in the input decoding failed. It never includes
-// value bytes, which may hold cardholder data.
+// DecodeError reports where in the input decoding failed. It holds no bytes
+// from the input: when a length is wrong, what is read as the next tag is
+// really part of a value, which may be cardholder data such as a PAN.
 type DecodeError struct {
-	// Offset is the position in the input passed to Decode.
+	// Offset is the position, in the input passed to Decode, of the data
+	// object that could not be decoded.
 	Offset int
-	// Tag is the tag being decoded, in upper-case hex, if it was read.
-	Tag string
-	Err error
+	Err    error
 }
 
 func (e *DecodeError) Error() string {
-	if e.Tag == "" {
-		return fmt.Sprintf("decode BER-TLV at offset %d: %v", e.Offset, e.Err)
-	}
-
-	return fmt.Sprintf("decode BER-TLV tag %s at offset %d: %v", e.Tag, e.Offset, e.Err)
+	return fmt.Sprintf("decode BER-TLV at offset %d: %v", e.Offset, e.Err)
 }
 
 func (e *DecodeError) Unwrap() error {
@@ -86,10 +91,15 @@ func NewComposite(tag string, tlvs ...TLV) TLV {
 // it never panics, and every error wraps one of the sentinel errors above in
 // a *DecodeError.
 //
-// Single '00' bytes between data objects are padding and are skipped. Values
-// share memory with data, capped so that appending to a Value cannot
-// overwrite the bytes that follow it.
+// Single '00' bytes between data objects are padding and are skipped, as EMV
+// Book 3 Annex B allows. 'FF' is not padding. Values share memory with data,
+// capped so that appending to a Value cannot overwrite the bytes that follow
+// it.
 func Decode(data []byte) ([]TLV, error) {
+	if len(data) > MaxInputSize {
+		return nil, &DecodeError{Err: ErrInputTooLarge}
+	}
+
 	return decode(data, 0, 0)
 }
 
@@ -111,26 +121,26 @@ func decode(data []byte, base, depth int) ([]TLV, error) {
 			return nil, &DecodeError{Offset: base + start, Err: err}
 		}
 		tagBytes := data[off : off+tagLen]
-		tag := strings.ToUpper(hex.EncodeToString(tagBytes))
 		off += tagLen
 
 		length, lenLen, err := decodeLength(data[off:])
 		if err != nil {
-			return nil, &DecodeError{Offset: base + start, Tag: tag, Err: err}
+			return nil, &DecodeError{Offset: base + start, Err: err}
 		}
 		off += lenLen
 
 		// Compare as uint64 so a four-byte length cannot overflow int on
 		// 32-bit platforms.
 		if length > uint64(len(data)-off) {
-			return nil, &DecodeError{Offset: base + start, Tag: tag, Err: ErrLengthOutOfRange}
+			return nil, &DecodeError{Offset: base + start, Err: ErrLengthOutOfRange}
 		}
 		end := off + int(length)
 		value := data[off:end:end]
 
+		tag := strings.ToUpper(hex.EncodeToString(tagBytes))
 		if isConstructed(tagBytes) {
 			if depth >= MaxDepth {
-				return nil, &DecodeError{Offset: base + start, Tag: tag, Err: ErrMaxDepth}
+				return nil, &DecodeError{Offset: base + start, Err: ErrMaxDepth}
 			}
 
 			children, err := decode(value, base+off, depth+1)
@@ -201,9 +211,19 @@ func decodeLength(data []byte) (uint64, int, error) {
 
 // Encode writes tlvs as BER-TLV with minimal-length encoding. A TLV with
 // children is written from TLVs; otherwise Value is written as is, so a
-// constructed tag may carry pre-encoded content in Value.
+// constructed tag may carry pre-encoded content in Value. That content must
+// itself decode, so that Decode accepts everything Encode writes.
 func Encode(tlvs []TLV) ([]byte, error) {
-	return encode(nil, tlvs, 0)
+	out, err := encode(nil, tlvs, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(out) > MaxInputSize {
+		return nil, ErrInputTooLarge
+	}
+
+	return out, nil
 }
 
 func encode(out []byte, tlvs []TLV, depth int) ([]byte, error) {
@@ -218,7 +238,8 @@ func encode(out []byte, tlvs []TLV, depth int) ([]byte, error) {
 		}
 
 		value := t.Value
-		if len(t.TLVs) > 0 {
+		switch {
+		case len(t.TLVs) > 0:
 			if !isConstructed(tag) {
 				return nil, fmt.Errorf("%w %q: primitive tag has children", ErrInvalidTag, t.Tag)
 			}
@@ -230,6 +251,18 @@ func encode(out []byte, tlvs []TLV, depth int) ([]byte, error) {
 			value, err = encode(nil, t.TLVs, depth+1)
 			if err != nil {
 				return nil, err
+			}
+		case isConstructed(tag) && len(value) > 0:
+			if depth >= MaxDepth {
+				return nil, fmt.Errorf("encode tag %s: %w", t.Tag, ErrMaxDepth)
+			}
+
+			if len(value) > MaxInputSize {
+				return nil, fmt.Errorf("encode tag %s: %w", t.Tag, ErrInputTooLarge)
+			}
+
+			if _, err := decode(value, 0, depth+1); err != nil {
+				return nil, fmt.Errorf("encode tag %s: raw value: %w", t.Tag, err)
 			}
 		}
 
@@ -303,14 +336,24 @@ func isConstructed(tag []byte) bool {
 }
 
 // FindFirstTag returns the first TLV with the given tag, searching depth-first
-// in encoding order. The tag is compared without regard to case.
+// in encoding order. The tag is compared without regard to case. It looks no
+// deeper than MaxDepth, which covers everything Decode returns and stops a
+// tree built with a cycle from overflowing the stack.
 func FindFirstTag(tlvs []TLV, tag string) (TLV, bool) {
+	return findFirstTag(tlvs, tag, 0)
+}
+
+func findFirstTag(tlvs []TLV, tag string, depth int) (TLV, bool) {
 	for _, t := range tlvs {
 		if strings.EqualFold(t.Tag, tag) {
 			return t, true
 		}
 
-		if found, ok := FindFirstTag(t.TLVs, tag); ok {
+		if depth >= MaxDepth {
+			continue
+		}
+
+		if found, ok := findFirstTag(t.TLVs, tag, depth+1); ok {
 			return found, true
 		}
 	}

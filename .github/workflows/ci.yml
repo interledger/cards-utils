@@ -21,6 +21,9 @@ jobs:
           cache-dependency-path: go.sum
       - run: go test -race -cover ./...
       - run: go vet ./...
+      # Decode compares lengths that do not fit a 32-bit int. The race
+      # detector does not support 386.
+      - run: GOARCH=386 go test ./...
 
   fuzz:
     name: Fuzz
@@ -32,7 +35,15 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - run: go test ./tlv -run='^$' -fuzz='^FuzzDecode$' -fuzztime=60s
+      - run: go test ./tlv -run='^$' -fuzz='^FuzzEncode$' -fuzztime=30s
       - run: go test ./tlv -run='^$' -fuzz='^FuzzValidateAmount$' -fuzztime=30s
+      # A failing input is written to tlv/testdata/fuzz. Keep it, so it can
+      # be committed as a regression test.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures
+          path: tlv/testdata/fuzz
 
   lint:
     name: Lint
