@@ -39,6 +39,9 @@ Highlights:
 - `redact.Object` integrates with zerolog structured logging; `redact.AuditObject` does the same under `ProfileAudit`, for audit events.
 - `redact.Error` returns an error's message with URLs and HTTP request targets redacted.
 
+[docs/sensitive-data.md](docs/sensitive-data.md) explains when to use each
+class, with examples. Read it before you add or classify a field.
+
 Each consuming service keeps its own sentinel/property tests (under
 `internal/redact`) that assert its own types are classified correctly; the
 reusable redaction engine lives here.
@@ -134,8 +137,15 @@ unchanged, and that `Decode` reads back whatever `Encode` writes.
 
 ## Local development
 
-Until this module is tagged and published, consuming services reference it with
-a `replace` directive pointing at a sibling checkout:
+The module has no tagged releases yet, so services pin a commit with a
+pseudo-version:
+
+```bash
+go get github.com/interledger/cards-utils@<commit>
+```
+
+To try local changes in a service before they are merged, point it at a
+sibling checkout with a `replace` directive, and remove it before you commit:
 
 ```
 replace github.com/interledger/cards-utils => ../cards-utils

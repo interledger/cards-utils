@@ -1,8 +1,8 @@
 // Package redact produces loggable copies of API and domain values with
 // sensitive fields masked or hidden, driven by `sensitive:"<class>"` struct
 // tags. Classification lives in the OpenAPI spec (x-oapi-codegen-extra-tags)
-// for generated types and directly on hand-written domain structs; see each
-// service's docs/sensitive-data.md for the taxonomy and conventions.
+// for generated types and directly on hand-written domain structs; see
+// docs/sensitive-data.md in this module for when to use each class.
 //
 // Never log a request/response/domain struct directly - always go through
 // Redact or Object:
