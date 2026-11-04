@@ -1,4 +1,5 @@
-// Package tlv provides helpers for validating EMV BER-TLV payloads.
+// Package tlv decodes and encodes EMV BER-TLV payloads and validates the
+// amounts in them.
 package tlv
 
 import (
@@ -6,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-
-	"github.com/moov-io/bertlv"
 )
 
 const (
@@ -32,12 +31,12 @@ var (
 // matching wantAmount. The amount is compared as an unsigned decimal integer,
 // so leading zeroes in either representation do not affect the result.
 func ValidateAmount(data []byte, wantAmount string) error {
-	decoded, err := bertlv.Decode(data)
+	decoded, err := Decode(data)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrParsingTLV, err)
 	}
 
-	amountTLV, ok := bertlv.FindFirstTag(decoded, AmountTag)
+	amountTLV, ok := FindFirstTag(decoded, AmountTag)
 	if !ok || len(amountTLV.Value) != amountLength {
 		return ErrInvalidTLV
 	}

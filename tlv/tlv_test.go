@@ -160,6 +160,23 @@ func FuzzValidateAmount(f *testing.F) {
 	f.Add([]byte{0x9F, 0x02, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00})
 	f.Add([]byte{0x5A, 0x88, 0xFA, 0xBA, 0xDA, 0xBA, 0xDA, 0xBA, 0xDA, 0xBA})
 	f.Fuzz(func(t *testing.T, data []byte) {
-		_ = tlv.ValidateAmount(data, "100")
+		err := tlv.ValidateAmount(data, "100")
+		if err == nil {
+			decoded, decodeErr := tlv.Decode(data)
+			require.NoError(t, decodeErr)
+			amount, ok := tlv.FindFirstTag(decoded, tlv.AmountTag)
+			require.True(t, ok)
+			got, bcdErr := tlv.NumericBCDToUint(amount.Value)
+			require.NoError(t, bcdErr)
+			require.Equal(t, uint64(100), got)
+			return
+		}
+
+		for _, sentinel := range []error{tlv.ErrParsingTLV, tlv.ErrInvalidTLV, tlv.ErrAmountMismatch} {
+			if errors.Is(err, sentinel) {
+				return
+			}
+		}
+		t.Fatalf("error %v wraps no sentinel", err)
 	})
 }

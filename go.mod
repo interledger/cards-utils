@@ -4,7 +4,6 @@ go 1.26.0
 
 require (
 	github.com/labstack/echo/v4 v4.15.4
-	github.com/moov-io/bertlv v0.1.1-0.20261021235716-721e178a1e36
 	github.com/rs/zerolog v1.34.0
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/otel/trace v1.47.0
